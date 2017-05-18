@@ -177,12 +177,6 @@
              radius         :pixi.rounded-rectangle/radius}]
   (.drawRoundedRect graphics x y width height radius))
 
-(defn- create-filter [filter]
-  (js/PIXI.Filter.
-   (:pixi.filter/vertex filter)
-   (:pixi.filter/fragment filter)
-   (clj->js (:pixi.filter/uniforms filter))))
-
 (defn- render-texture? [texture]
   (contains? texture :pixi.render-texture/source))
 
@@ -257,8 +251,48 @@
 (defmethod create :pixi.text/style [_ value]
   {:val {}, :obj (js/PIXI.TextStyle.)})
 
-(defmethod create :pixi.object/filters [_ value]
-  {:val value, :obj (create-filter value)})
+(def build-cache (atom {}))
+
+(defmulti create-filter :pixi.filter/type)
+
+(defmethod create-filter :default
+  [filter]
+  (js/PIXI.Filter.
+   (:pixi.filter/vertex filter)
+   (:pixi.filter/fragment filter)
+   (clj->js (:pixi.filter/uniforms filter))))
+
+;; ColorMatrixFilter
+(defmethod create-filter :pixi.filter.type/color-matrix
+  [_]
+  (js/PIXI.filters.ColorMatrixFilter.))
+
+;; BlurFilter
+(defmethod create-filter :pixi.filter.type/blur
+  [filter]
+  (js/PIXI.filters.BlurFilter.))
+
+;; OutlineFilter
+#_(defmethod create-filter :pixi.filter.type/outline
+  [filter]
+  (js/PIXI.filters.OutlineFilter.
+   (:pixi.filter/thickness filter)
+   (:pixi.filter/color filter)))
+
+;; DisplacementFilter
+(defmethod create-filter :pixi.filter.type/displacement
+  [filter]
+  (println "keys cached " (keys @build-cache))
+  (println "what " (@build-cache [:lab :pixi/stage :lab :pixi.container/children :main :pixi.container/children :displacement]))
+  ;; (println "what i got? " ((@build-cache [:lab :pixi/stage :lab :pixi.container/children :main :pixi.container/children :displacement])))
+  (js/PIXI.filters.DisplacementFilter.
+   (-> @build-cache
+       (get [:lab :pixi/stage :lab :pixi.container/children :main :pixi.container/children :displacement])
+       (:obj))))
+
+(defmethod create :pixi.object/filters
+  [_ value]
+  {:val {} :obj (create-filter value)})
 
 (defmulti update-prop! (fn [object index attr value] attr))
 
@@ -386,6 +420,14 @@
 (defmethod update-prop! :pixi.filter/padding [filter _ _ padding]
   (set! (.-padding filter) padding))
 
+(defmethod update-prop! :pixi.filter/matrix
+  [obj _ _ matrix]
+  (set! (.-matrix obj) (clj->js matrix)))
+
+(defmethod update-prop! :pixi.filter/blur
+  [obj _ _ blur]
+  (set! (.-blur obj) blur))
+
 (defn- run-kv! [proc m]
   (reduce-kv (fn [_ k v] (proc k v) nil) nil m)
   nil)
@@ -419,7 +461,7 @@
   (not= (select-keys old-value recreate-keys)
         (select-keys new-value recreate-keys)))
 
-(def build-cache (atom {}))
+#_(def build-cache (atom {}))
 
 (defn- build! [index attr value]
   (let [index  (cache-index index attr value)
